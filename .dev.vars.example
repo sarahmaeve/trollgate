@@ -1,0 +1,12 @@
+# Copy to .dev.vars (gitignored) for local `wrangler dev`.
+# Register a GitHub OAuth App: https://github.com/settings/developers
+#   Authorization callback URL: http://localhost:8787/auth/github/callback
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+
+# Phase 5 (cancellation email)
+RESEND_API_KEY=
+
+# Phase 6 (Stripe)
+# STRIPE_SECRET_KEY=
+# STRIPE_WEBHOOK_SECRET=

@@ -20,6 +20,7 @@ wrangler.local.jsonc
 # Secrets / env
 .env
 .env.*
+!.dev.vars.example
 
 # Logs
 *.log
