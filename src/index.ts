@@ -18,6 +18,7 @@ import {
 import { bootstrapIdentity } from "./org/bootstrap";
 import { layout as page, esc } from "./view";
 import { events } from "./events/manage";
+import { manage } from "./events/dashboard";
 import { pub } from "./events/public";
 import { signup } from "./signup/handlers";
 import { reservation } from "./signup/reservation";
@@ -26,6 +27,7 @@ const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 // Distinct path spaces; order is not significant between them.
 app.route("/", events); // /events/* (organizer, auth)
+app.route("/", manage); // /manage/* (organizer, auth)
 app.route("/", signup); // /o/:id/signup (auth)
 app.route("/", reservation); // /r/:token (public capability)
 app.route("/", pub); // / and /e/:id (public)
