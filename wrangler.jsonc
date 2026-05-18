@@ -1,0 +1,47 @@
+{
+  // Trollgate Worker. Bindings sized per IMPL.md: D1 + KV + cron, no Durable
+  // Object (seat caps are a guarded D1 insert). Stripe arrives in Phase 6 and
+  // adds only secrets + a webhook route — no binding changes here.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "trollgate",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": { "enabled": true },
+
+  // Static assets (tokens.css, fonts, app.css) are served directly when a
+  // file matches; every other path falls through to the Worker. Asset paths
+  // (/tokens.css, /app.css, /fonts/*) never collide with dynamic routes.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "trollgate",
+      // Placeholder for local dev; replace with the real id from
+      // `wrangler d1 create trollgate` before any remote deploy.
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS",
+      "id": "00000000000000000000000000000000"
+    }
+  ],
+
+  "vars": {
+    "BASE_URL": "http://localhost:8787"
+  },
+
+  "triggers": {
+    // UTC, ~15 min: materialize occurrences, abandoned-sweep (no-op pre-Stripe),
+    // notify-drain. See IMPL.md "Scheduled cleanup".
+    "crons": ["*/15 * * * *"]
+  }
+}

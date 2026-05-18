@@ -1,0 +1,67 @@
+/* Generated from DESIGN.md ("Maximalist Pop") front-matter — DESIGN.md is the
+   source of truth. If you change a token, change it there first, then mirror
+   it here. No build step; this is the token→CSS-var seam (IMPL.md). */
+
+:root {
+  /* Colors */
+  --color-primary:    #FF2D7A;
+  --color-secondary:  #00C7F2;
+  --color-accent:     #FFD84D;
+  --color-background: #FFF4F8;
+  --color-surface:    #FFFFFF;
+  --color-text:       #141414;
+  --color-muted:      #6A5A66;
+  --color-border:     #141414;
+  --color-error:      #FF5A54;
+  --color-success:    #28D17C;
+  --color-warning:    #FF9F1C;
+  --color-info:       #00C7F2;
+
+  /* Text-on-color (WCAG-checked against DESIGN.md palette):
+     black on primary ≈ 5.9:1 (AA normal) — DESIGN.md specifies #000000.
+     The palette is light/saturated, so ink-black text is the legible and
+     on-language choice on every fill. */
+  --on-primary:   #000000;
+  --on-secondary: var(--color-text);
+  --on-accent:    var(--color-text);
+  --on-error:     var(--color-text);
+  --on-success:   var(--color-text);
+
+  /* Typography */
+  --font-display: "Bungee", system-ui, sans-serif;
+  --font-body:    "Space Grotesk", system-ui, sans-serif;
+  --font-label:   "IBM Plex Mono", ui-monospace, monospace;
+
+  --type-headline-lg: 700 2.075rem/1.1 var(--font-display);
+  --type-headline-md: 600 1.66rem/1.15 var(--font-display);
+  --type-body-md:     400 17px/1.5 var(--font-body);
+  --type-label-md:    600 0.75rem/1 var(--font-label);
+  --tracking-display: 0.01em;
+  --tracking-label:   0.08em;
+
+  /* Radius */
+  --radius-none: 0px;
+  --radius-sm:   12px;
+  --radius-md:   20px;
+  --radius-lg:   30px;
+  --radius-full: 999px;
+
+  /* Spacing */
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  12px;
+  --space-lg:  16px;
+  --space-xl:  24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  --space-4xl: 64px;
+
+  /* Hard offset shadows (pop / pasted-cutout depth) */
+  --shadow-sm: 4px 4px 0 0 rgba(20, 20, 20, 0.18);
+  --shadow-md: 8px 8px 0 0 rgba(20, 20, 20, 0.22);
+  --shadow-lg: 14px 14px 0 0 rgba(20, 20, 20, 0.26);
+
+  /* Borders — comic-ink contours */
+  --border-width:        3px;
+  --border-width-accent: 5px;
+}
