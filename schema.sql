@@ -62,11 +62,16 @@ CREATE TABLE IF NOT EXISTS event_occurrences (
     UNIQUE (event_id, starts_at)                -- idempotent re-materialization
 );
 
--- One row per attendee per session. Seat caps are enforced by a guarded
--- conditional INSERT against this table (see IMPL.md "Seat caps"), counting
--- status IN ('confirmed','pending_payment','refund_pending').
+-- Seat caps are enforced by a guarded conditional INSERT against this table
+-- (see IMPL.md "Seat caps"), counting the active statuses below.
 -- Status: pending_payment | confirmed | abandoned | canceled
 --         | refund_pending | canceled_refunded
+--
+-- Uniqueness is a PARTIAL index over *active* statuses only (uq_signups_active
+-- below): a user may hold at most one live signup per occurrence, but a
+-- canceled/abandoned row does not occupy the slot. Re-signup after cancel is
+-- then a fee policy decided in app code (db/queries.ts): free events allow it;
+-- paid events ($5) do NOT — a cancel/refund/re-signup loop would be abuse.
 CREATE TABLE IF NOT EXISTS signups (
     id              TEXT PRIMARY KEY,           -- ulid (internal identity only)
     link_token      TEXT NOT NULL UNIQUE,       -- 256-bit CSPRNG; the /r/<token> capability
@@ -81,9 +86,15 @@ CREATE TABLE IF NOT EXISTS signups (
     refund_id       TEXT,                       -- Stripe Refund id; set once, never reissued
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     confirmed_at    TEXT,
-    canceled_at     TEXT,
-    UNIQUE (occurrence_id, github_id)           -- one signup per GitHub user per session
+    canceled_at     TEXT
 );
+
+-- At most one *active* signup per (occurrence, user). Canceled/abandoned
+-- rows are excluded, so they neither block a free re-signup nor occupy a
+-- seat. This is also the concurrency guard against double-booking.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_signups_active
+    ON signups(occurrence_id, github_id)
+    WHERE status IN ('confirmed','pending_payment','refund_pending');
 
 -- Async email outbox. Written in the same D1 batch as the cancel; drained
 -- by the Cron. sent_at guard makes redelivery idempotent (no double-email).

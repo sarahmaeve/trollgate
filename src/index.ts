@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { dbHealth } from "./db/queries";
 import { scheduled } from "./cron";
 import { newToken } from "./id";
 import {
@@ -19,34 +18,17 @@ import {
 import { bootstrapIdentity } from "./org/bootstrap";
 import { layout as page, esc } from "./view";
 import { events } from "./events/manage";
+import { pub } from "./events/public";
+import { signup } from "./signup/handlers";
+import { reservation } from "./signup/reservation";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-app.route("/", events);
-
-/** Phase 0/1 health page. */
-app.get("/", async (c) => {
-  let status: string;
-  let ok = false;
-  try {
-    const h = await dbHealth(c.env);
-    ok = h.ok;
-    status = `D1 connected · ${h.orgCount} organization(s)`;
-  } catch (err) {
-    status = `D1 not ready: ${(err as Error).message}`;
-  }
-  return c.html(
-    page(`
-    <span class="sticker">Phase&nbsp;1 · auth</span>
-    <h1 class="display">TROLLGATE</h1>
-    <div class="card">
-      <p class="label">System check</p>
-      <p class="${ok ? "ok" : "bad"}">${esc(status)}</p>
-    </div>
-    <a class="btn" href="/me">Sign in with GitHub</a>
-    <p class="muted">Moderated signups for study groups, meetups &amp; classes.</p>`),
-  );
-});
+// Distinct path spaces; order is not significant between them.
+app.route("/", events); // /events/* (organizer, auth)
+app.route("/", signup); // /o/:id/signup (auth)
+app.route("/", reservation); // /r/:token (public capability)
+app.route("/", pub); // / and /e/:id (public)
 
 app.get("/auth/github/login", async (c) => {
   if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET) {

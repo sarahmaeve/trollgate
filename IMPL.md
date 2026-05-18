@@ -68,7 +68,7 @@ Shape, at a glance (see the file for columns, constraints, and inline notes):
 | `memberships` | `(org_id, user_id, role)` — who may manage an org's events. |
 | `events` | Series template (`rrule` + `timezone`); a fixed event is `COUNT=1`. |
 | `event_occurrences` | Concrete sessions materialized from `rrule` by the Cron. |
-| `signups` | One attendee per session; `link_token` is the `/r/<token>` capability. |
+| `signups` | One *active* signup per (session, user) via a partial unique index; `link_token` is the `/r/<token>` capability. |
 | `notifications` | Async email outbox, drained by the Cron. |
 
 Signup status enum: `pending_payment | confirmed | abandoned | canceled |
@@ -240,7 +240,8 @@ single capacity-guarded conditional insert is atomic on its own:
 -- One statement: inserts only if the seat count is still under the cap.
 -- Rows affected = 0  → occurrence full (reject).
 -- Rows affected = 1  → seat taken.
--- UNIQUE(occurrence_id, github_id) separately rejects a double signup.
+-- Partial unique index uq_signups_active separately rejects a second
+-- *active* signup by the same user (canceled rows excluded).
 INSERT INTO signups (id, link_token, occurrence_id, event_id,
                      github_login, github_id, email, status)
 SELECT ?, ?, ?, ?, ?, ?, ?, ?
@@ -326,6 +327,13 @@ capacity-guarded insert sees one fewer seat taken — no explicit release.
   occurrence is `scheduled` and `now < starts_at - 24h`. Paid →  refund
   primitive. Free → just `canceled`. Inside 24h → `canceled`, **no refund**
   (deposit forfeited, per policy).
+- **Re-signup after cancel (decided fee policy):** a canceled signup leaves
+  the active-uniqueness slot free, so for **free events the user may sign up
+  again** (a fresh row + new `link_token`; the old canceled one stays as
+  history). For **paid events re-signup is blocked** — a
+  cancel → $5 refund → re-signup loop is abuse. Enforced in app code
+  (`priorSignupExists` on the Phase 6 paid reserve path), not the schema;
+  the free path only checks for an *active* prior signup.
 - **Scheduler cancels series** (`POST /manage/:eventId/cancel`): event
   `status='canceled'`; for every occurrence and its signups —
   `confirmed` + paid → refund primitive (regardless of the 24h rule: the
