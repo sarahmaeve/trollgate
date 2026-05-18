@@ -6,6 +6,7 @@
 import type { Env } from "../env";
 import { newId } from "../id";
 import { sendEmail } from "./send";
+import { esc } from "../view";
 import { NOTIFICATION_KIND, MAX_NOTIFICATION_ATTEMPTS } from "../db/constants";
 
 const DRAIN_LIMIT = 50; // bound work per Cron tick
@@ -28,7 +29,7 @@ export function eventCanceledNotificationStmts(
   );
 }
 
-interface PendingRow {
+export interface PendingRow {
   notif_id: string;
   to_email: string;
   kind: string;
@@ -45,7 +46,14 @@ export interface DrainResult {
   skipped: boolean;
 }
 
-function buildEmail(r: PendingRow) {
+/**
+ * Build the cancellation email. `event_title`/`contact_email` are
+ * organizer-controlled free text delivered to every attendee (Finding 2):
+ * the plaintext part carries them verbatim (no markup there to inject), but
+ * the HTML part MUST escape them — including inside the mailto href — so an
+ * organizer cannot inject markup or phishing links into platform mail.
+ */
+export function buildEmail(r: PendingRow) {
   const when = (() => {
     try {
       return new Intl.DateTimeFormat("en-US", {
@@ -57,16 +65,18 @@ function buildEmail(r: PendingRow) {
       return r.starts_at;
     }
   })();
+  const title = esc(r.event_title);
+  const contact = esc(r.contact_email);
   const subject = `Canceled: ${r.event_title}`;
   const text =
     `Your session "${r.event_title}" scheduled for ${when} has been ` +
     `canceled by the organizer. No action is needed. ` +
     `Questions: ${r.contact_email}`;
   const html =
-    `<p>Your session <strong>${r.event_title}</strong> scheduled for ` +
-    `${when} has been <strong>canceled</strong> by the organizer.</p>` +
+    `<p>Your session <strong>${title}</strong> scheduled for ` +
+    `${esc(when)} has been <strong>canceled</strong> by the organizer.</p>` +
     `<p>No action is needed. Questions: ` +
-    `<a href="mailto:${r.contact_email}">${r.contact_email}</a></p>`;
+    `<a href="mailto:${contact}">${contact}</a></p>`;
   return { subject, text, html };
 }
 

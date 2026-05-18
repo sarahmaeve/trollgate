@@ -8,10 +8,10 @@
  * NoPayment invariant.
  */
 import { Hono } from "hono";
-import { rrulestr } from "rrule";
 import type { Env } from "../env";
 import { requireGitHub, type Vars } from "../auth/session";
 import { materializeEvent } from "./materialize";
+import { validateRule } from "./recurrence";
 import { newId } from "../id";
 import { layout, esc } from "../view";
 
@@ -97,13 +97,12 @@ events.post("/events", async (c) => {
   let ical = "";
   if (errs.length === 0) {
     ical = buildICal(timezone, startsLocal, ruleBody);
-    try {
-      const rule = rrulestr(ical, { forceset: true });
-      if (rule.all((_, i) => i < 1).length === 0)
-        errs.push("recurrence produces no occurrences");
-    } catch {
-      errs.push("invalid recurrence rule");
-    }
+    // Bounded validation (Finding 1): rejects an unparseable, empty, OR
+    // pathologically frequent rule before the event row is ever stored, so
+    // an abusive series can't be persisted and poison the Cron. Far-future
+    // series are still accepted (validated against their first occurrence).
+    const v = validateRule(ical, durationMin);
+    if (!v.ok) errs.push(v.error);
   }
 
   if (errs.length > 0) {

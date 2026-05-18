@@ -32,14 +32,32 @@ export type Vars = { identity: Identity };
 
 const kvKey = (token: string) => `sess:${token}`;
 
-function isSecure(env: Env): boolean {
-  return env.BASE_URL.startsWith("https://");
+// Plain http is only legitimate for local development; anywhere else a
+// non-https BASE_URL is a misconfiguration.
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Whether the session cookie must carry the `Secure` attribute (Finding 6).
+ * Fails closed: anything that isn't explicitly local http — including a
+ * misconfigured non-https production BASE_URL or an unparseable one — gets
+ * `Secure`, so a deploy mistake breaks auth visibly rather than silently
+ * shipping the session token over cleartext.
+ */
+export function isSecureCookie(env: Env): boolean {
+  let url: URL;
+  try {
+    url = new URL(env.BASE_URL);
+  } catch {
+    return true;
+  }
+  if (url.protocol === "https:") return true;
+  return !LOCAL_HOSTS.has(url.hostname);
 }
 
 function setSessionCookie(c: Context, env: Env, token: string): void {
   setCookie(c, COOKIE, token, {
     httpOnly: true,
-    secure: isSecure(env),
+    secure: isSecureCookie(env),
     sameSite: "Lax",
     path: "/",
     maxAge: SESSION_TTL,

@@ -10,12 +10,10 @@
  * Known hardening item (IMPL.md): exhaustive DST-edge correctness across the
  * rrule.js tzid path is a later pass; Phase 2 covers fixed + simple weekly.
  */
-import { rrulestr } from "rrule";
 import type { Env } from "../env";
 import { newId } from "../id";
 import { EVENT_STATUS, OCCURRENCE_STATUS } from "../db/constants";
-
-const WINDOW_DAYS = 90;
+import { planOccurrences } from "./recurrence";
 
 export interface MaterializableEvent {
   id: string;
@@ -32,16 +30,15 @@ export async function materializeEvent(
   env: Env,
   ev: MaterializableEvent,
 ): Promise<MaterializeResult> {
-  const rule = rrulestr(ev.rrule, { forceset: true });
-
-  // Start the window a day in the past: a one-off (or the next occurrence)
-  // whose start slipped just behind "now" between create and the first cron
-  // tick must still materialize. ON CONFLICT keeps re-runs idempotent.
-  const from = new Date(Date.now() - 86_400_000);
-  const to = new Date(Date.now() + WINDOW_DAYS * 86_400_000);
-  const starts = rule.between(from, to, true);
-
-  if (starts.length === 0) return { considered: 0, inserted: 0 };
+  // Bounded expansion (Finding 1): planOccurrences caps iteration, so an
+  // abusive rule that slipped past create-time validation can never explode
+  // the Cron. A capped/invalid rule is skipped (logged), not fatal.
+  const plan = planOccurrences(ev.rrule, ev.duration_min);
+  if (!plan.ok) {
+    console.error(`materialize skipped event ${ev.id}: ${plan.error}`);
+    return { considered: 0, inserted: 0 };
+  }
+  if (plan.occurrences.length === 0) return { considered: 0, inserted: 0 };
 
   const stmt = env.DB.prepare(
     `INSERT INTO event_occurrences (id, event_id, starts_at, ends_at, status)
@@ -49,20 +46,13 @@ export async function materializeEvent(
      ON CONFLICT(event_id, starts_at) DO NOTHING`,
   );
 
-  const batch = starts.map((d) => {
-    const startsAt = d.toISOString();
-    const endsAt = new Date(
-      d.getTime() + ev.duration_min * 60_000,
-    ).toISOString();
-    return stmt.bind(newId("occ"), ev.id, startsAt, endsAt);
-  });
+  const batch = plan.occurrences.map((o) =>
+    stmt.bind(newId("occ"), ev.id, o.startsAt, o.endsAt),
+  );
 
   const results = await env.DB.batch(batch);
-  const inserted = results.reduce(
-    (n, r) => n + (r.meta?.changes ?? 0),
-    0,
-  );
-  return { considered: starts.length, inserted };
+  const inserted = results.reduce((n, r) => n + (r.meta?.changes ?? 0), 0);
+  return { considered: plan.occurrences.length, inserted };
 }
 
 /** Materialize every open event. Called by the Cron and on create. */

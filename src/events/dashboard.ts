@@ -10,6 +10,7 @@ import type { Env } from "../env";
 import { requireGitHub, type Vars } from "../auth/session";
 import { layout, esc, formatInTz, errorCard } from "../view";
 import { eventCanceledNotificationStmts } from "../notify/outbox";
+import { csvField } from "./csv";
 import {
   ROLE,
   EVENT_STATUS,
@@ -162,9 +163,6 @@ manage.get("/manage/:id/list", async (c) => {
   );
 });
 
-/** RFC 4180: quote every field, escape embedded quotes by doubling. */
-const csv = (v: string) => `"${v.replace(/"/g, '""')}"`;
-
 manage.get("/manage/:id/list.csv", async (c) => {
   const uid = c.get("identity").userId;
   const ev = await authorize(c.env, uid, c.req.param("id"));
@@ -173,10 +171,10 @@ manage.get("/manage/:id/list.csv", async (c) => {
   const rows = await confirmedAttendees(c.env, ev.id);
   const lines = [
     ["session_starts_at_utc", "github_login", "email", "status"]
-      .map(csv)
+      .map(csvField)
       .join(","),
     ...rows.map((r) =>
-      [r.starts_at, r.github_login, r.email, r.status].map(csv).join(","),
+      [r.starts_at, r.github_login, r.email, r.status].map(csvField).join(","),
     ),
   ];
   return new Response(lines.join("\r\n"), {

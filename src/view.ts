@@ -1,10 +1,17 @@
 /** Shared HTML shell + escaping. Templates stay semantic; styling is the
  *  Maximalist Pop token system in /public (IMPL.md "Visual design"). */
 
+const HTML_ENTITIES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;", // Finding 3: also escape single quotes so single-quoted
+  //              attribute contexts can't be broken out of.
+};
+
 export function esc(s: string): string {
-  return s.replace(/[&<>"]/g, (ch) =>
-    ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : "&quot;",
-  );
+  return s.replace(/[&<>"']/g, (ch) => HTML_ENTITIES[ch]!);
 }
 
 export function layout(body: string): string {
