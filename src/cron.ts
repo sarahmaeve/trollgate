@@ -6,15 +6,23 @@
  */
 import type { Env } from "./env";
 import { materializeAllOpen } from "./events/materialize";
+import { drainNotifications } from "./notify/outbox";
 
 export async function scheduled(
   _event: ScheduledController,
   env: Env,
   _ctx: ExecutionContext,
 ): Promise<void> {
-  const r = await materializeAllOpen(env);
+  const m = await materializeAllOpen(env);
   console.log(
-    `cron: materialized ${r.inserted} new occurrence(s) of ${r.considered} considered`,
+    `cron: materialized ${m.inserted} new occurrence(s) of ${m.considered} considered`,
   );
-  // Step 2 (abandoned-sweep) and step 3 (notify-drain) arrive in later phases.
+
+  // Step 2 (abandoned-sweep) is a no-op until Phase 6 creates pending_payment.
+
+  const n = await drainNotifications(env);
+  console.log(
+    `cron: notifications sent=${n.sent} failed=${n.failed} ` +
+      `considered=${n.considered}${n.skipped ? " (RESEND_API_KEY unset)" : ""}`,
+  );
 }

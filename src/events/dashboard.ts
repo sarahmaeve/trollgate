@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { Env } from "../env";
 import { requireGitHub, type Vars } from "../auth/session";
 import { layout, esc } from "../view";
-import { newId } from "../id";
+import { eventCanceledNotificationStmts } from "../notify/outbox";
 
 export const manage = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -231,13 +231,9 @@ manage.post("/manage/:id/cancel", async (c) => {
       `UPDATE signups SET status='abandoned'
         WHERE event_id=?1 AND status='pending_payment'`,
     ).bind(ev.id),
-    ...affectedIds.results.map((s) =>
-      c.env.DB.prepare(
-        `INSERT INTO notifications (id, signup_id, kind, to_email)
-         VALUES (?1, ?2, 'event_canceled', ?3)
-         ON CONFLICT(signup_id, kind) DO NOTHING`,
-      ).bind(newId("ntf"), s.id, s.email),
-    ),
+    // Outbox enqueue, same batch as the cancel (atomic). Resend delivery
+    // happens on the Cron drain (Phase 5).
+    ...eventCanceledNotificationStmts(c.env, affectedIds.results),
   ];
 
   await c.env.DB.batch(batch);

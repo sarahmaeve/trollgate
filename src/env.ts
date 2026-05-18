@@ -17,5 +17,8 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   SESSION_SECRET?: string;
   RESEND_API_KEY?: string;
+  // Optional override of the Resend endpoint (staging / local test sink).
+  // Defaults to https://api.resend.com/emails.
+  RESEND_API_URL?: string;
   // Phase 6 (Stripe): STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET.
 }
