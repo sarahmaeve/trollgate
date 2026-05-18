@@ -17,27 +17,12 @@ import {
   type Vars,
 } from "./auth/session";
 import { bootstrapIdentity } from "./org/bootstrap";
+import { layout as page, esc } from "./view";
+import { events } from "./events/manage";
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-function page(body: string): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Trollgate</title>
-  <link rel="stylesheet" href="/tokens.css">
-  <link rel="stylesheet" href="/app.css">
-</head>
-<body><main class="stack">${body}</main></body>
-</html>`;
-}
-
-const esc = (s: string) =>
-  s.replace(/[&<>"]/g, (ch) =>
-    ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : "&quot;",
-  );
+app.route("/", events);
 
 /** Phase 0/1 health page. */
 app.get("/", async (c) => {
