@@ -7,13 +7,19 @@
  */
 import { Hono } from "hono";
 import type { Env } from "../env";
-import { layout, esc } from "../view";
+import { layout, esc, formatInTz, errorCard } from "../view";
+import {
+  SIGNUP_STATUS,
+  CANCELABLE_STATUSES,
+  CANCELABLE_STATUSES_SQL,
+  type SignupStatus,
+} from "../db/constants";
 
 export const reservation = new Hono<{ Bindings: Env }>();
 
 interface SignupView {
   link_token: string;
-  status: string;
+  status: SignupStatus;
   event_title: string;
   timezone: string;
   starts_at: string;
@@ -34,46 +40,40 @@ async function load(env: Env, token: string): Promise<SignupView | null> {
     .first<SignupView>();
 }
 
-const when = (s: SignupView) =>
-  new Intl.DateTimeFormat("en-US", {
-    timeZone: s.timezone,
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(s.starts_at));
+const isActive = (st: SignupStatus) =>
+  (CANCELABLE_STATUSES as readonly string[]).includes(st);
+
+function statusNotice(s: SignupView, started: boolean): string {
+  if (s.status === SIGNUP_STATUS.canceled)
+    return "This reservation was canceled.";
+  if (started) return "This session has started; cancellation is closed.";
+  return "Not cancelable.";
+}
 
 reservation.get("/r/:token", async (c) => {
   const s = await load(c.env, c.req.param("token"));
-  if (!s)
-    return c.html(
-      layout(`<div class="card"><p class="bad">Reservation not found.</p></div>`),
-      404,
-    );
+  if (!s) return c.html(errorCard("Reservation not found."), 404);
 
-  const active = s.status === "confirmed" || s.status === "pending_payment";
   const started = new Date(s.starts_at).getTime() <= Date.now();
-  const cancelable = active && !started;
+  const cancelable = isActive(s.status) && !started;
+
+  const control = cancelable
+    ? `<form method="post" action="/r/${esc(s.link_token)}/cancel">
+       <button type="submit">Cancel my spot</button></form>`
+    : `<p class="muted">${statusNotice(s, started)}</p>`;
 
   return c.html(
     layout(`
     <span class="sticker">${esc(s.status)}</span>
     <h1 class="display">${esc(s.event_title)}</h1>
     <div class="card">
-      <p class="label">Session</p><p>${esc(when(s))}</p>
+      <p class="label">Session</p><p>${esc(
+        formatInTz(s.starts_at, s.timezone),
+      )}</p>
       <p class="label">Reserved by</p><p>@${esc(s.github_login)} · ${esc(
         s.email,
       )}</p>
-      ${
-        cancelable
-          ? `<form method="post" action="/r/${esc(s.link_token)}/cancel">
-             <button type="submit">Cancel my spot</button></form>`
-          : `<p class="muted">${
-              s.status === "canceled"
-                ? "This reservation was canceled."
-                : started
-                  ? "This session has started; cancellation is closed."
-                  : "Not cancelable."
-            }</p>`
-      }
+      ${control}
     </div>
     <p class="muted">Bookmark this link — it is your reservation.</p>`),
   );
@@ -82,16 +82,11 @@ reservation.get("/r/:token", async (c) => {
 reservation.post("/r/:token/cancel", async (c) => {
   const token = c.req.param("token");
   const s = await load(c.env, token);
-  if (!s)
-    return c.html(
-      layout(`<div class="card"><p class="bad">Reservation not found.</p></div>`),
-      404,
-    );
+  if (!s) return c.html(errorCard("Reservation not found."), 404);
 
   if (new Date(s.starts_at).getTime() <= Date.now())
     return c.html(
-      layout(`<div class="card"><p class="bad">This session has already
-      started — cancellation is closed.</p></div>`),
+      errorCard("This session has already started — cancellation is closed."),
       409,
     );
 
@@ -99,8 +94,9 @@ reservation.post("/r/:token/cancel", async (c) => {
   // zero rows and is a no-op. Free/NoPayment → no refund; the freed seat is
   // implicit (status leaves the seat-counting set).
   await c.env.DB.prepare(
-    `UPDATE signups SET status = 'canceled', canceled_at = datetime('now')
-      WHERE link_token = ?1 AND status IN ('confirmed','pending_payment')`,
+    `UPDATE signups SET status = '${SIGNUP_STATUS.canceled}',
+            canceled_at = datetime('now')
+      WHERE link_token = ?1 AND status IN ${CANCELABLE_STATUSES_SQL}`,
   )
     .bind(token)
     .run();

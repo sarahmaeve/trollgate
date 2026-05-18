@@ -11,6 +11,7 @@ import type { Env } from "../env";
 import type { GitHubIdentity } from "../auth/github";
 import type { Identity } from "../auth/session";
 import { newId } from "../id";
+import { ROLE } from "../db/constants";
 
 export async function bootstrapIdentity(
   env: Env,
@@ -53,7 +54,7 @@ export async function bootstrapIdentity(
       ).bind(orgId, orgName, gh.email),
       env.DB.prepare(
         `INSERT INTO memberships (org_id, user_id, role)
-         VALUES (?1, ?2, 'owner')`,
+         VALUES (?1, ?2, '${ROLE.owner}')`,
       ).bind(orgId, userId),
     ]);
   }

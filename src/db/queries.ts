@@ -5,6 +5,7 @@
  */
 import type { Env } from "../env";
 import { newId, newToken } from "../id";
+import { ACTIVE_SIGNUP_STATUSES_SQL, SIGNUP_STATUS } from "./constants";
 
 export interface HealthResult {
   ok: boolean;
@@ -19,8 +20,7 @@ export async function dbHealth(env: Env): Promise<HealthResult> {
   return { ok: true, orgCount: row?.n ?? 0 };
 }
 
-/** Statuses that occupy a seat (IMPL.md). */
-const SEAT_STATUSES = "('confirmed','pending_payment','refund_pending')";
+const SEAT_STATUSES = ACTIVE_SIGNUP_STATUSES_SQL;
 
 export interface OccurrenceContext {
   occurrence_id: string;
@@ -110,7 +110,7 @@ export async function reserveConfirmedSeat(
       `INSERT INTO signups
          (id, link_token, occurrence_id, event_id,
           github_login, github_id, email, status, confirmed_at)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'confirmed', datetime('now')
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, '${SIGNUP_STATUS.confirmed}', datetime('now')
         WHERE (SELECT COUNT(*) FROM signups
                 WHERE occurrence_id = ?3 AND status IN ${SEAT_STATUSES})
               < (SELECT max_seats FROM events WHERE id = ?4)`,

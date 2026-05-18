@@ -6,6 +6,7 @@
 import type { Env } from "../env";
 import { newId } from "../id";
 import { sendEmail } from "./send";
+import { NOTIFICATION_KIND, MAX_NOTIFICATION_ATTEMPTS } from "../db/constants";
 
 const DRAIN_LIMIT = 50; // bound work per Cron tick
 
@@ -21,7 +22,7 @@ export function eventCanceledNotificationStmts(
   return signups.map((s) =>
     env.DB.prepare(
       `INSERT INTO notifications (id, signup_id, kind, to_email)
-       VALUES (?1, ?2, 'event_canceled', ?3)
+       VALUES (?1, ?2, '${NOTIFICATION_KIND.eventCanceled}', ?3)
        ON CONFLICT(signup_id, kind) DO NOTHING`,
     ).bind(newId("ntf"), s.id, s.email),
   );
@@ -80,11 +81,11 @@ export async function drainNotifications(env: Env): Promise<DrainResult> {
        JOIN event_occurrences o  ON o.id = s.occurrence_id
        JOIN events e             ON e.id = s.event_id
        JOIN organizations org    ON org.id = e.org_id
-      WHERE n.sent_at IS NULL
-      ORDER BY n.created_at
-      LIMIT ?1`,
+      WHERE n.sent_at IS NULL AND n.attempts < ?1
+      ORDER BY n.attempts, n.created_at
+      LIMIT ?2`,
   )
-    .bind(DRAIN_LIMIT)
+    .bind(MAX_NOTIFICATION_ATTEMPTS, DRAIN_LIMIT)
     .all<PendingRow>();
 
   const out: DrainResult = {

@@ -4,21 +4,19 @@
  */
 import { Hono } from "hono";
 import type { Env } from "../env";
-import { layout, esc } from "../view";
+import { layout, esc, formatInTz, errorCard } from "../view";
+import {
+  ACTIVE_SIGNUP_STATUSES_SQL,
+  EVENT_STATUS,
+  OCCURRENCE_STATUS,
+} from "../db/constants";
 
 export const pub = new Hono<{ Bindings: Env }>();
 
-function fmt(iso: string, tz: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
+// occurrences are stored as ISO8601 ("…T…Z"); datetime() normalizes both
+// sides so the comparison is chronological, not lexical.
+const UPCOMING = `o.status = '${OCCURRENCE_STATUS.scheduled}'
+  AND datetime(o.starts_at) >= datetime('now')`;
 
 pub.get("/", async (c) => {
   const { results } = await c.env.DB.prepare(
@@ -26,10 +24,8 @@ pub.get("/", async (c) => {
             MIN(o.starts_at) AS next_at
        FROM events e
        LEFT JOIN event_occurrences o
-         ON o.event_id = e.id
-        AND o.status = 'scheduled'
-        AND o.starts_at >= datetime('now')
-      WHERE e.status = 'open'
+         ON o.event_id = e.id AND ${UPCOMING}
+      WHERE e.status = '${EVENT_STATUS.open}'
       GROUP BY e.id
       ORDER BY next_at IS NULL, next_at`,
   ).all<{
@@ -44,7 +40,9 @@ pub.get("/", async (c) => {
     .map(
       (e) => `<a class="card" href="/e/${esc(e.id)}" style="text-decoration:none">
       <p class="label">${
-        e.next_at ? "Next · " + esc(fmt(e.next_at, e.timezone)) : "No upcoming sessions"
+        e.next_at
+          ? "Next · " + esc(formatInTz(e.next_at, e.timezone))
+          : "No upcoming sessions"
       }</p>
       <h2 class="display" style="font-size:1.66rem">${esc(e.title)}</h2>
       <p>${esc(e.description)}</p></a>`,
@@ -65,7 +63,7 @@ pub.get("/e/:id", async (c) => {
 
   const ev = await c.env.DB.prepare(
     `SELECT id, title, description, requirements, timezone, max_seats, status
-       FROM events WHERE id = ?1 AND status = 'open'`,
+       FROM events WHERE id = ?1 AND status = '${EVENT_STATUS.open}'`,
   )
     .bind(eventId)
     .first<{
@@ -78,24 +76,16 @@ pub.get("/e/:id", async (c) => {
       status: string;
     }>();
 
-  if (!ev) {
-    return c.html(
-      layout(`<div class="card"><p class="bad">Event not found.</p>
-      <a class="btn" href="/">Back</a></div>`),
-      404,
-    );
-  }
+  if (!ev) return c.html(errorCard("Event not found."), 404);
 
   const { results: occ } = await c.env.DB.prepare(
     `SELECT o.id, o.starts_at,
             (SELECT COUNT(*) FROM signups s
               WHERE s.occurrence_id = o.id
-                AND s.status IN ('confirmed','pending_payment','refund_pending'))
+                AND s.status IN ${ACTIVE_SIGNUP_STATUSES_SQL})
               AS taken
        FROM event_occurrences o
-      WHERE o.event_id = ?1
-        AND o.status = 'scheduled'
-        AND o.starts_at >= datetime('now')
+      WHERE o.event_id = ?1 AND ${UPCOMING}
       ORDER BY o.starts_at`,
   )
     .bind(eventId)
@@ -104,13 +94,12 @@ pub.get("/e/:id", async (c) => {
   const sessions = occ
     .map((o) => {
       const full = o.taken >= ev.max_seats;
-      const seats = `${o.taken} / ${ev.max_seats} seats`;
       const action = full
         ? `<span class="label">FULL</span>`
         : `<a class="btn" href="/o/${esc(o.id)}/signup">Sign up</a>`;
       return `<li class="card">
-        <p class="label">${esc(fmt(o.starts_at, ev.timezone))}</p>
-        <p>${seats}</p>${action}</li>`;
+        <p class="label">${esc(formatInTz(o.starts_at, ev.timezone))}</p>
+        <p>${o.taken} / ${ev.max_seats} seats</p>${action}</li>`;
     })
     .join("");
 
@@ -129,7 +118,7 @@ pub.get("/e/:id", async (c) => {
     </div>
     <p class="label">Upcoming sessions</p>
     <ul class="stack" style="padding:0;list-style:none">${
-      sessions || "<li class=\"muted\">No upcoming sessions.</li>"
+      sessions || '<li class="muted">No upcoming sessions.</li>'
     }</ul>
     <a class="btn" href="/">Back</a>`),
   );

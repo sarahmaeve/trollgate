@@ -11,7 +11,9 @@ import { newToken } from "../id";
 
 const COOKIE = "tg_sess";
 const PRE_AUTH_TTL = 600; // 10 min — long enough for the GitHub round-trip
-const SESSION_TTL = 7 * 24 * 60 * 60; // 7 days
+// Absolute expiry, not sliding: a session ends 7 days after login
+// regardless of activity (requireGitHub does not refresh it). Deliberate.
+const SESSION_TTL = 7 * 24 * 60 * 60;
 
 export interface Identity {
   userId: string;
@@ -70,13 +72,18 @@ export async function startOAuth(
   setSessionCookie(c, c.env, token);
 }
 
-/** Pop the stored OAuth state for one-time comparison. */
+/**
+ * Pop the stored OAuth state and consume the pre-auth session so the state
+ * is genuinely single-use (a replayed callback within the TTL cannot reuse
+ * it) and abandoned flows don't linger until TTL.
+ */
 export async function takeOAuthState(
   c: Context<{ Bindings: Env; Variables: Vars }>,
 ): Promise<string | null> {
   const token = getCookie(c, COOKIE);
   if (!token) return null;
   const s = await read(c.env, token);
+  await c.env.SESSIONS.delete(kvKey(token));
   return s?.oauthState ?? null;
 }
 

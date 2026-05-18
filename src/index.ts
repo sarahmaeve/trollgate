@@ -16,7 +16,7 @@ import {
   type Vars,
 } from "./auth/session";
 import { bootstrapIdentity } from "./org/bootstrap";
-import { layout as page, esc } from "./view";
+import { layout, esc, errorCard } from "./view";
 import { events } from "./events/manage";
 import { manage } from "./events/dashboard";
 import { pub } from "./events/public";
@@ -35,7 +35,7 @@ app.route("/", pub); // / and /e/:id (public)
 app.get("/auth/github/login", async (c) => {
   if (!c.env.GITHUB_CLIENT_ID || !c.env.GITHUB_CLIENT_SECRET) {
     return c.html(
-      page(`<div class="card"><p class="label">Not configured</p>
+      layout(`<div class="card"><p class="label">Not configured</p>
       <p class="bad">GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET are unset.</p>
       <p class="muted">Add them to <code>.dev.vars</code> (see
       <code>.dev.vars.example</code>) and restart.</p></div>`),
@@ -52,20 +52,11 @@ app.get("/auth/github/callback", async (c) => {
   const code = url.searchParams.get("code");
   const returnedState = url.searchParams.get("state");
 
+  const back = { href: "/auth/github/login", label: "Try again" };
   const expected = await takeOAuthState(c);
-  if (!expected || !returnedState || returnedState !== expected) {
-    return c.html(
-      page(`<div class="card"><p class="bad">Invalid OAuth state.</p>
-      <a class="btn" href="/auth/github/login">Try again</a></div>`),
-      400,
-    );
-  }
-  if (!code) {
-    return c.html(
-      page(`<div class="card"><p class="bad">Missing authorization code.</p></div>`),
-      400,
-    );
-  }
+  if (!expected || !returnedState || returnedState !== expected)
+    return c.html(errorCard("Invalid OAuth state.", back), 400);
+  if (!code) return c.html(errorCard("Missing authorization code.", back), 400);
 
   try {
     const token = await exchangeCode(c.env, code);
@@ -75,10 +66,7 @@ app.get("/auth/github/callback", async (c) => {
     return c.redirect("/me", 302);
   } catch (err) {
     return c.html(
-      page(`<div class="card"><p class="bad">Sign-in failed: ${esc(
-        (err as Error).message,
-      )}</p>
-      <a class="btn" href="/auth/github/login">Try again</a></div>`),
+      errorCard(`Sign-in failed: ${(err as Error).message}`, back),
       502,
     );
   }
@@ -89,7 +77,7 @@ app.get("/auth/logout", async (c) => {
   return c.redirect("/", 302);
 });
 
-/** Authenticated probe — verifies the session + bootstrap. Phase 3 replaces. */
+/** Signed-in account view: confirms the session + bootstrapped org. */
 app.get("/me", requireGitHub, async (c) => {
   const id = c.get("identity");
   const org = await c.env.DB.prepare(
@@ -99,7 +87,7 @@ app.get("/me", requireGitHub, async (c) => {
     .first<{ name: string }>();
 
   return c.html(
-    page(`
+    layout(`
     <span class="sticker">Signed in</span>
     <h1 class="display">@${esc(id.githubLogin)}</h1>
     <div class="card">

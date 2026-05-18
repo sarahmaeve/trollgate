@@ -1,19 +1,29 @@
 /**
- * Organizer surface (Phase 4): dashboard, attendee list (HTML + CSV — the
- * explicit trollgate.md MVP bullet), and series cancel. Authorization is by
- * membership in the event's org; owner/admin may cancel, staff is read-only.
- * Cancel enqueues `event_canceled` notifications in the same D1 batch;
- * Resend delivery is Phase 5.
+ * Organizer surface: dashboard, attendee list (HTML + CSV — the explicit
+ * trollgate.md MVP bullet), and series cancel. Authorization is by membership
+ * in the event's org; owner/admin may cancel, staff is read-only. Cancel
+ * enqueues `event_canceled` notifications in the same D1 batch; Resend
+ * delivery is the Cron drain.
  */
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { Env } from "../env";
 import { requireGitHub, type Vars } from "../auth/session";
-import { layout, esc } from "../view";
+import { layout, esc, formatInTz, errorCard } from "../view";
 import { eventCanceledNotificationStmts } from "../notify/outbox";
+import {
+  ROLE,
+  EVENT_STATUS,
+  OCCURRENCE_STATUS,
+  SIGNUP_STATUS,
+  type Role,
+  type EventStatus,
+} from "../db/constants";
 
 export const manage = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 manage.use("/manage/*", requireGitHub);
+
+type Ctx = Context<{ Bindings: Env; Variables: Vars }>;
 
 interface AuthorizedEvent {
   id: string;
@@ -21,8 +31,8 @@ interface AuthorizedEvent {
   description: string;
   timezone: string;
   max_seats: number;
-  status: string;
-  role: string; // owner | admin | staff
+  status: EventStatus;
+  role: Role;
 }
 
 async function authorize(
@@ -41,24 +51,21 @@ async function authorize(
     .first<AuthorizedEvent>();
 }
 
-const forbidden = (c: any) =>
-  c.html(
-    layout(`<div class="card"><p class="bad">Not authorized for this
-    event.</p><a class="btn" href="/">Home</a></div>`),
-    403,
-  );
+const forbidden = (c: Ctx) =>
+  c.html(errorCard("Not authorized for this event."), 403);
 
-const fmt = (iso: string, tz: string) => {
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-};
+const canCancel = (ev: AuthorizedEvent) =>
+  (ev.role === ROLE.owner || ev.role === ROLE.admin) &&
+  ev.status === EVENT_STATUS.open;
+
+function cancelControl(ev: AuthorizedEvent): string {
+  if (canCancel(ev))
+    return `<form method="post" action="/manage/${esc(ev.id)}/cancel">
+      <button type="submit">Cancel this event</button></form>`;
+  if (ev.status !== EVENT_STATUS.open)
+    return `<p class="muted">Event is ${esc(ev.status)}.</p>`;
+  return `<p class="muted">Your role (${esc(ev.role)}) cannot cancel.</p>`;
+}
 
 manage.get("/manage/:id", async (c) => {
   const uid = c.get("identity").userId;
@@ -68,8 +75,8 @@ manage.get("/manage/:id", async (c) => {
   const { results: occ } = await c.env.DB.prepare(
     `SELECT o.starts_at, o.status,
             (SELECT COUNT(*) FROM signups s
-              WHERE s.occurrence_id = o.id AND s.status = 'confirmed')
-              AS confirmed
+              WHERE s.occurrence_id = o.id
+                AND s.status = '${SIGNUP_STATUS.confirmed}') AS confirmed
        FROM event_occurrences o
       WHERE o.event_id = ?1
       ORDER BY o.starts_at`,
@@ -77,13 +84,10 @@ manage.get("/manage/:id", async (c) => {
     .bind(ev.id)
     .all<{ starts_at: string; status: string; confirmed: number }>();
 
-  const canCancel =
-    (ev.role === "owner" || ev.role === "admin") && ev.status === "open";
-
   const rows = occ
     .map(
       (o) =>
-        `<li>${esc(fmt(o.starts_at, ev.timezone))} —
+        `<li>${esc(formatInTz(o.starts_at, ev.timezone))} —
          ${o.confirmed}/${ev.max_seats}
          <span class="label">${esc(o.status)}</span></li>`,
     )
@@ -100,35 +104,28 @@ manage.get("/manage/:id", async (c) => {
     </div>
     <a class="btn" href="/manage/${esc(ev.id)}/list">Attendee list</a>
     <a class="btn" href="/manage/${esc(ev.id)}/list.csv">Download CSV</a>
-    ${
-      canCancel
-        ? `<form method="post" action="/manage/${esc(ev.id)}/cancel">
-           <button type="submit">Cancel this event</button></form>`
-        : ev.status !== "open"
-          ? `<p class="muted">Event is ${esc(ev.status)}.</p>`
-          : `<p class="muted">Your role (${esc(
-              ev.role,
-            )}) cannot cancel.</p>`
-    }`),
+    ${cancelControl(ev)}`),
   );
 });
 
 interface AttendeeRow {
+  signup_id: string;
   github_login: string;
   email: string;
   status: string;
   starts_at: string;
 }
 
+/** Confirmed reservations across the series — feeds list, CSV, and cancel. */
 async function confirmedAttendees(
   env: Env,
   eventId: string,
 ): Promise<AttendeeRow[]> {
   const { results } = await env.DB.prepare(
-    `SELECT s.github_login, s.email, s.status, o.starts_at
+    `SELECT s.id AS signup_id, s.github_login, s.email, s.status, o.starts_at
        FROM signups s
        JOIN event_occurrences o ON o.id = s.occurrence_id
-      WHERE s.event_id = ?1 AND s.status = 'confirmed'
+      WHERE s.event_id = ?1 AND s.status = '${SIGNUP_STATUS.confirmed}'
       ORDER BY o.starts_at, s.github_login`,
   )
     .bind(eventId)
@@ -145,7 +142,7 @@ manage.get("/manage/:id/list", async (c) => {
   const body = rows
     .map(
       (r) =>
-        `<tr><td>${esc(fmt(r.starts_at, ev.timezone))}</td>
+        `<tr><td>${esc(formatInTz(r.starts_at, ev.timezone))}</td>
          <td>@${esc(r.github_login)}</td><td>${esc(r.email)}</td></tr>`,
     )
     .join("");
@@ -195,45 +192,46 @@ manage.post("/manage/:id/cancel", async (c) => {
   const ev = await authorize(c.env, uid, c.req.param("id"));
   if (!ev) return forbidden(c);
 
-  if (ev.role !== "owner" && ev.role !== "admin")
+  if (ev.role !== ROLE.owner && ev.role !== ROLE.admin)
     return c.html(
-      layout(`<div class="card"><p class="bad">Your role (${esc(
-        ev.role,
-      )}) cannot cancel this event.</p></div>`),
+      errorCard(`Your role (${ev.role}) cannot cancel this event.`, {
+        href: `/manage/${ev.id}`,
+        label: "Back",
+      }),
       403,
     );
 
-  if (ev.status !== "open")
+  if (ev.status !== EVENT_STATUS.open)
     return c.redirect(`/manage/${ev.id}`, 302);
 
-  // Snapshot confirmed signups before flipping, to enqueue notifications.
+  // Snapshot confirmed signups once — used for both the notification
+  // enqueue and the count shown below.
   const affected = await confirmedAttendees(c.env, ev.id);
-  const affectedIds = await c.env.DB.prepare(
-    `SELECT id, email FROM signups
-      WHERE event_id = ?1 AND status = 'confirmed'`,
-  )
-    .bind(ev.id)
-    .all<{ id: string; email: string }>();
 
   const batch = [
     c.env.DB.prepare(
-      `UPDATE events SET status='canceled' WHERE id=?1 AND status='open'`,
+      `UPDATE events SET status='${EVENT_STATUS.canceled}'
+        WHERE id=?1 AND status='${EVENT_STATUS.open}'`,
     ).bind(ev.id),
     c.env.DB.prepare(
-      `UPDATE event_occurrences SET status='canceled'
-        WHERE event_id=?1 AND status='scheduled'`,
+      `UPDATE event_occurrences SET status='${OCCURRENCE_STATUS.canceled}'
+        WHERE event_id=?1 AND status='${OCCURRENCE_STATUS.scheduled}'`,
     ).bind(ev.id),
     c.env.DB.prepare(
-      `UPDATE signups SET status='canceled', canceled_at=datetime('now')
-        WHERE event_id=?1 AND status='confirmed'`,
+      `UPDATE signups SET status='${SIGNUP_STATUS.canceled}',
+              canceled_at=datetime('now')
+        WHERE event_id=?1 AND status='${SIGNUP_STATUS.confirmed}'`,
     ).bind(ev.id),
     c.env.DB.prepare(
-      `UPDATE signups SET status='abandoned'
-        WHERE event_id=?1 AND status='pending_payment'`,
+      `UPDATE signups SET status='${SIGNUP_STATUS.abandoned}'
+        WHERE event_id=?1 AND status='${SIGNUP_STATUS.pendingPayment}'`,
     ).bind(ev.id),
     // Outbox enqueue, same batch as the cancel (atomic). Resend delivery
-    // happens on the Cron drain (Phase 5).
-    ...eventCanceledNotificationStmts(c.env, affectedIds.results),
+    // happens on the Cron drain.
+    ...eventCanceledNotificationStmts(
+      c.env,
+      affected.map((a) => ({ id: a.signup_id, email: a.email })),
+    ),
   ];
 
   await c.env.DB.batch(batch);
@@ -244,7 +242,7 @@ manage.post("/manage/:id/cancel", async (c) => {
     <h1 class="display">${esc(ev.title)}</h1>
     <div class="card">
       <p>Event canceled. ${affected.length} confirmed attendee(s) queued
-      for a cancellation email (delivery: Phase&nbsp;5).</p>
+      for a cancellation email.</p>
     </div>
     <a class="btn" href="/manage/${esc(ev.id)}">Back</a>`),
   );
