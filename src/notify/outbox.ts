@@ -29,6 +29,19 @@ export function eventCanceledNotificationStmts(
   );
 }
 
+export function eventRescheduledNotificationStmts(
+  env: Env,
+  signups: { id: string; email: string }[],
+) {
+  return signups.map((s) =>
+    env.DB.prepare(
+      `INSERT INTO notifications (id, signup_id, kind, to_email)
+       VALUES (?1, ?2, '${NOTIFICATION_KIND.eventRescheduled}', ?3)
+       ON CONFLICT(signup_id, kind) DO NOTHING`,
+    ).bind(newId("ntf"), s.id, s.email),
+  );
+}
+
 export interface PendingRow {
   notif_id: string;
   to_email: string;
@@ -67,6 +80,23 @@ export function buildEmail(r: PendingRow) {
   })();
   const title = esc(r.event_title);
   const contact = esc(r.contact_email);
+
+  if (r.kind === NOTIFICATION_KIND.eventRescheduled) {
+    // `when` is the occurrence's *new* starts_at (drain reads it post-move).
+    const subject = `Rescheduled: ${r.event_title}`;
+    const text =
+      `Your session "${r.event_title}" has been moved by the organizer. ` +
+      `New time: ${when}. Your spot is still reserved. ` +
+      `Questions: ${r.contact_email}`;
+    const html =
+      `<p>Your session <strong>${title}</strong> has been ` +
+      `<strong>rescheduled</strong> by the organizer.</p>` +
+      `<p>New time: <strong>${esc(when)}</strong>. Your spot is still ` +
+      `reserved.</p><p>Questions: ` +
+      `<a href="mailto:${contact}">${contact}</a></p>`;
+    return { subject, text, html };
+  }
+
   const subject = `Canceled: ${r.event_title}`;
   const text =
     `Your session "${r.event_title}" scheduled for ${when} has been ` +

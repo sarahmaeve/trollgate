@@ -27,7 +27,10 @@ export type OccurrenceStatus =
 export const ROLE = { owner: "owner", admin: "admin", staff: "staff" } as const;
 export type Role = (typeof ROLE)[keyof typeof ROLE];
 
-export const NOTIFICATION_KIND = { eventCanceled: "event_canceled" } as const;
+export const NOTIFICATION_KIND = {
+  eventCanceled: "event_canceled",
+  eventRescheduled: "event_rescheduled",
+} as const;
 export type NotificationKind =
   (typeof NOTIFICATION_KIND)[keyof typeof NOTIFICATION_KIND];
 

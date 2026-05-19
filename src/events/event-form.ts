@@ -120,3 +120,49 @@ export function parseCreateEventForm(
     },
   };
 }
+
+export interface RescheduleInput {
+  timezone: string;
+  starts_local: string;
+}
+
+export type RescheduleResult =
+  | { ok: true; startsAt: string; endsAt: string }
+  | { ok: false; raw: RescheduleInput; errors: string[] };
+
+/**
+ * Move a single occurrence to a new local time. Same guards as initial
+ * scheduling: valid IANA tz, parseable datetime, and the new instant must be
+ * in the future. The tz→UTC conversion goes through the *same* one-off iCal
+ * + firstOccurrence path as creation, so DST behavior is identical (no second
+ * conversion code path to drift). Duration is the event's, unchanged.
+ */
+export function planReschedule(
+  input: RescheduleInput,
+  durationMin: number,
+  now: number = Date.now(),
+): RescheduleResult {
+  const raw: RescheduleInput = {
+    timezone: (input.timezone ?? "").trim(),
+    starts_local: (input.starts_local ?? "").trim(),
+  };
+
+  const errors: string[] = [];
+  if (!isValidTimezone(raw.timezone)) errors.push("Pick a valid timezone.");
+  const basic = toICalBasic(raw.starts_local);
+  if (!basic) errors.push("Pick a valid date and time.");
+
+  if (errors.length > 0) return { ok: false, raw, errors };
+
+  const ical = `DTSTART;TZID=${raw.timezone}:${basic}\nRRULE:FREQ=DAILY;COUNT=1`;
+  const start = firstOccurrence(ical);
+  if (!start) return { ok: false, raw, errors: ["Invalid date and time."] };
+  if (start.getTime() <= now)
+    return { ok: false, raw, errors: ["New time must be in the future."] };
+
+  return {
+    ok: true,
+    startsAt: start.toISOString(),
+    endsAt: new Date(start.getTime() + durationMin * 60_000).toISOString(),
+  };
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { timezoneOptions } from "../src/events/timezones";
-import { parseCreateEventForm } from "../src/events/event-form";
+import { parseCreateEventForm, planReschedule } from "../src/events/event-form";
 
 describe("timezoneOptions (dropdown source)", () => {
   it("returns a deduped, sorted IANA list including common zones", () => {
@@ -88,6 +88,55 @@ describe("parseCreateEventForm", () => {
 
   it("rejects an invalid first-session datetime", () => {
     const r = parseCreateEventForm({ ...base, starts_local: "June 2nd" });
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("planReschedule (same future/tz guards as creation)", () => {
+  const at = (s: string) => Date.parse(s);
+
+  it("moves to a valid future time and recomputes end from duration", () => {
+    const r = planReschedule(
+      { timezone: "America/Los_Angeles", starts_local: "2030-01-02T18:00" },
+      90,
+      at("2029-01-01T00:00:00Z"),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // 18:00 America/Los_Angeles (PST, -8) → 02:00Z next day.
+    expect(r.startsAt).toBe("2030-01-03T02:00:00.000Z");
+    expect(new Date(r.endsAt).getTime() - new Date(r.startsAt).getTime()).toBe(
+      90 * 60_000,
+    );
+  });
+
+  it("rejects a move into the past (same guard as initial scheduling)", () => {
+    const r = planReschedule(
+      { timezone: "America/Los_Angeles", starts_local: "2030-01-02T18:00" },
+      60,
+      at("2031-01-01T00:00:00Z"),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.errors.join(" ")).toMatch(/future/i);
+    expect(r.raw.timezone).toBe("America/Los_Angeles"); // sticky
+  });
+
+  it("rejects an invalid timezone", () => {
+    const r = planReschedule(
+      { timezone: "Not/AZone", starts_local: "2030-01-02T18:00" },
+      60,
+      at("2029-01-01T00:00:00Z"),
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects an invalid datetime", () => {
+    const r = planReschedule(
+      { timezone: "America/Los_Angeles", starts_local: "soon" },
+      60,
+      at("2029-01-01T00:00:00Z"),
+    );
     expect(r.ok).toBe(false);
   });
 });

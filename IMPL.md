@@ -158,6 +158,10 @@ POST /r/:token/cancel          self-cancel; full refund iff paid & >24h pre-occu
 #            'owner'/'admin' may cancel & refund, 'staff' may only view lists)
 GET  /manage/:eventId          owner dashboard
 POST /manage/:eventId/cancel   cancel event; refund ALL confirmed paid signups
+GET/POST /manage/:eventId/occurrences/:occId/reschedule
+                               move one occurrence (same future/tz guards as
+                               create); free → keep signups + notify
+                               (event_rescheduled); paid → refund + warn (P6)
 GET  /manage/:eventId/list     confirmed signups as HTML
 GET  /manage/:eventId/list.csv confirmed signups as CSV
 
@@ -341,6 +345,18 @@ capacity-guarded insert sees one fewer seat taken — no explicit release.
   `canceled`; `pending_payment` → `abandoned` (never charged, no refund).
   Stripe calls are external and **not** in the D1 batch, so each is
   retryable; a Cron sweep retries any stuck `refund_pending`.
+- **Reschedule occurrence** (`/manage/:eventId/occurrences/:occId/reschedule`):
+  per-occurrence move under the *same* guards as initial scheduling (valid
+  IANA tz, parseable datetime, new instant must be in the future — same
+  `firstOccurrence` tz/DST path; sticky form on error). **Free:** the
+  occurrence's `starts_at`/`ends_at` change, confirmed signups stay attached,
+  one `event_rescheduled` notice per attendee is enqueued in the same D1
+  batch. **Paid (Phase 6):** same refund primitive as cancel (attendees paid
+  for a specific time and did not consent to the new one) → refund + release
+  the paid confirmed signups, new time opens for fresh signups. **Mandatory
+  warning interstitial** before *cancel OR reschedule* whenever
+  `deposit_cents > 0`: "this refunds $X to N attendees — confirm." Today the
+  route hard-stops paid events at the seam (501) until Phase 6 wires this.
 
 > The DB side (D1 batch) is atomic and rolls back on failure, but the Stripe
 > refund API is not part of it. Treat refunds as idempotent external effects
