@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "cf-typegen": "wrangler types",
     "db:apply:local": "wrangler d1 execute trollgate --local --file ./schema.sql",
-    "db:seed:local": "wrangler d1 execute trollgate --local --file ./seed.sql"
+    "db:seed:local": "wrangler d1 execute trollgate --local --file ./seed.sql",
+    "seed:demo": "wrangler d1 execute trollgate --local --file ./scripts/seed-demo.sql"
   },
   "dependencies": {
     "hono": "^4.6.14",

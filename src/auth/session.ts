@@ -12,9 +12,11 @@ import { errorCard, brandName, type Viewer } from "../view";
 
 const COOKIE = "tg_sess";
 const PRE_AUTH_TTL = 600; // 10 min — long enough for the GitHub round-trip
-// Absolute expiry, not sliding: a session ends 7 days after login
-// regardless of activity (requireGitHub does not refresh it). Deliberate.
-const SESSION_TTL = 7 * 24 * 60 * 60;
+// Absolute expiry, not sliding: a session ends 1 hour after login
+// regardless of activity (requireGitHub does not refresh it). Deliberate —
+// short-lived for an identity/payments admin tool; re-login is one click.
+// Drives both the KV TTL and the cookie Max-Age (single source).
+const SESSION_TTL = 60 * 60;
 
 export interface Identity {
   userId: string;
