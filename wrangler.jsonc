@@ -51,5 +51,58 @@
     // UTC, ~15 min: materialize occurrences, abandoned-sweep (no-op pre-Stripe),
     // notify-drain. See IMPL.md "Scheduled cleanup".
     "crons": ["*/15 * * * *"]
+  },
+
+  // Production environment. Deploy with `wrangler deploy --env production`.
+  // Named environments do NOT inherit `vars`/`d1_databases`/`kv_namespaces`,
+  // so they are restated here in full — that is the point: a prod deploy can
+  // never silently inherit the localhost dev defaults above. Replace every
+  // REPLACE_* before the first deploy. Secrets are also per-env:
+  // `wrangler secret put GITHUB_CLIENT_SECRET --env production` (likewise
+  // GITHUB_CLIENT_ID, RESEND_API_KEY).
+  "env": {
+    "production": {
+      "name": "trollgate",
+      "main": "src/index.ts",
+      "compatibility_date": "2026-05-01",
+      "compatibility_flags": ["nodejs_compat"],
+      "observability": { "enabled": true },
+
+      "assets": {
+        "directory": "./public",
+        "binding": "ASSETS"
+      },
+
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "trollgate",
+          "database_id": "REPLACE_WITH_PROD_D1_ID"
+        }
+      ],
+
+      "kv_namespaces": [
+        {
+          "binding": "SESSIONS",
+          "id": "REPLACE_WITH_PROD_KV_ID"
+        }
+      ],
+
+      "vars": {
+        // Must be https — drives the OAuth callback and the fail-closed
+        // cookie `Secure` (isSecureCookie).
+        "BASE_URL": "https://REPLACE_WITH_YOUR_DOMAIN",
+        // Comma-separated organizer GitHub ids. Empty ⇒ nobody can
+        // create/manage events (fail-closed) — set before launch.
+        "ADMIN_GITHUB_IDS": "",
+        "BRAND_NAME": "",
+        // Must be an address on the Resend-verified sending domain.
+        "MAIL_FROM": "REPLACE_WITH_VERIFIED_SENDER"
+      },
+
+      "triggers": {
+        "crons": ["*/15 * * * *"]
+      }
+    }
   }
 }
