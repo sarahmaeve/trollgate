@@ -151,6 +151,7 @@ describe("notification drain (mocked Resend)", () => {
     vi.restoreAllMocks();
     delete env.RESEND_API_KEY;
     delete env.RESEND_API_URL;
+    delete env.MAIL_FROM;
   });
 
   it("sends each notice exactly once and is idempotent", async () => {
@@ -159,6 +160,7 @@ describe("notification drain (mocked Resend)", () => {
 
     env.RESEND_API_KEY = "test";
     env.RESEND_API_URL = RESEND;
+    env.MAIL_FROM = "notifications@trollgate.test";
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -170,6 +172,14 @@ describe("notification drain (mocked Resend)", () => {
     expect(r1.failed).toBe(0);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy.mock.calls[0]?.[0]).toBe(RESEND);
+
+    // Deliverability: From is the platform sender, Reply-To the org contact.
+    const body = JSON.parse(
+      (fetchSpy.mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    expect(body.from).toBe("notifications@trollgate.test");
+    expect(body.reply_to).toBe("demo@org.test");
+    expect(body.to).toEqual(["att0@x.test"]);
 
     const unsent = await env.DB.prepare(
       `SELECT COUNT(*) n FROM notifications WHERE sent_at IS NULL`,

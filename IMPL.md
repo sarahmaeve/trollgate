@@ -371,8 +371,16 @@ A Worker cannot send SMTP. Cloudflare's `send_email` binding only reaches
 Workers tier ended in 2024. So outbound transactional mail goes through
 **Resend**, called as a plain `fetch()` (`POST https://api.resend.com/emails`,
 `Authorization: Bearer $RESEND_API_KEY`) — no SDK, consistent with the
-GitHub-OAuth approach. Requires a verified sending domain (SPF/DKIM/DMARC);
-`From` / `Reply-To` is the org's `contact_email`.
+GitHub-OAuth approach. `RESEND_API_URL` is overridable for a local sink /
+staging; unset → the Resend API.
+
+**From / Reply-To (deliverability):** `From` is `MAIL_FROM` — a fixed
+platform address that **must be on the Resend-verified domain in prod**
+(SPF/DKIM/DMARC on that domain). `Reply-To` is the org's `contact_email`, so
+replies still reach the organizer while SPF/DKIM pass. `MAIL_FROM` unset →
+falls back to `contact_email` (local-dev convenience only; an arbitrary org
+domain is not deliverable, so prod must set `MAIL_FROM`). This is what makes
+the multi-tenant bones work — any org's contact domain, one verified sender.
 
 Recipients = `signups` across all occurrences of the canceled event whose
 `status ∈ {confirmed, refund_pending, canceled_refunded}` (had a seat).

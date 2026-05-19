@@ -41,7 +41,10 @@
     // environment (.dev.vars locally; deployment vars in prod). Not secret.
     "ADMIN_GITHUB_IDS": "",
     // Display brand; override per deployment. Blank → "Trollgate".
-    "BRAND_NAME": ""
+    "BRAND_NAME": "",
+    // Platform From for outbound mail; MUST be on the Resend-verified
+    // domain in prod. Blank → falls back to org contact (dev only).
+    "MAIL_FROM": ""
   },
 
   "triggers": {

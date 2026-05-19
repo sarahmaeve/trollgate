@@ -5,7 +5,7 @@
  */
 import type { Env } from "../env";
 import { newId } from "../id";
-import { sendEmail } from "./send";
+import { sendEmail, mailFrom } from "./send";
 import { esc } from "../view";
 import { NOTIFICATION_KIND, MAX_NOTIFICATION_ATTEMPTS } from "../db/constants";
 
@@ -139,7 +139,7 @@ export async function drainNotifications(env: Env): Promise<DrainResult> {
     const { subject, text, html } = buildEmail(row);
     const res = await sendEmail(env, {
       to: row.to_email,
-      from: row.contact_email,
+      from: mailFrom(env, row.contact_email),
       replyTo: row.contact_email,
       subject,
       text,

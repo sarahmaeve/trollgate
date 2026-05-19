@@ -10,6 +10,16 @@ import type { Env } from "../env";
 
 const DEFAULT_URL = "https://api.resend.com/emails";
 
+/**
+ * The From address. Prod sets MAIL_FROM to an address on the Resend-verified
+ * domain (Reply-To stays the org's contact_email so replies reach the
+ * organizer). Falls back to the contact email only as a dev convenience —
+ * that is NOT deliverable in prod unless the contact's domain is verified.
+ */
+export function mailFrom(env: Env, contactEmail: string): string {
+  return env.MAIL_FROM?.trim() || contactEmail;
+}
+
 export interface OutgoingEmail {
   to: string;
   from: string;

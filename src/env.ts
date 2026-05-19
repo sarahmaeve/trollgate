@@ -25,5 +25,9 @@ export interface Env {
   // Optional override of the Resend endpoint (staging / local test sink).
   // Defaults to https://api.resend.com/emails.
   RESEND_API_URL?: string;
+  // Platform From address — MUST be on the Resend-verified domain in prod.
+  // Reply-To is always the org's contact_email. Unset → falls back to the
+  // org contact (dev convenience only; not deliverable in prod).
+  MAIL_FROM?: string;
   // Phase 6 (Stripe): STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET.
 }

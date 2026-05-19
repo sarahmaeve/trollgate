@@ -1,5 +1,26 @@
 import { describe, it, expect } from "vitest";
 import { buildEmail, type PendingRow } from "../src/notify/outbox";
+import { mailFrom } from "../src/notify/send";
+import type { Env } from "../src/env";
+
+describe("mailFrom (platform From; org contact is Reply-To)", () => {
+  const env = (v?: string) => ({ MAIL_FROM: v }) as Env;
+
+  it("uses the configured platform sender when set", () => {
+    expect(mailFrom(env("notifications@trollgate.app"), "host@x.com")).toBe(
+      "notifications@trollgate.app",
+    );
+    expect(mailFrom(env("  notifications@trollgate.app  "), "host@x.com")).toBe(
+      "notifications@trollgate.app",
+    );
+  });
+
+  it("falls back to the org contact when unset/blank (dev convenience)", () => {
+    expect(mailFrom(env(), "host@x.com")).toBe("host@x.com");
+    expect(mailFrom(env(""), "host@x.com")).toBe("host@x.com");
+    expect(mailFrom(env("   "), "host@x.com")).toBe("host@x.com");
+  });
+});
 
 const row = (over: Partial<PendingRow> = {}): PendingRow => ({
   notif_id: "ntf_1",

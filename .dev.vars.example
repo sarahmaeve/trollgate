@@ -11,8 +11,14 @@ ADMIN_GITHUB_IDS=
 # Display brand (sidebar + page title). Blank → "Trollgate".
 BRAND_NAME=
 
-# Phase 5 (cancellation email)
+# Email (cancellation / reschedule notices)
 RESEND_API_KEY=
+# Local sink for testing without a Resend account, e.g.
+# http://localhost:9099/emails  (unset in prod → defaults to Resend API)
+RESEND_API_URL=
+# Platform From; in prod set to an address on your Resend-verified domain.
+# Blank → falls back to the org contact email (dev only, not deliverable).
+MAIL_FROM=
 
 # Phase 6 (Stripe)
 # STRIPE_SECRET_KEY=
