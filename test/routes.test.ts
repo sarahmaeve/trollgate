@@ -37,7 +37,7 @@ describe("Finding 5 — POST /events must be auth-gated", () => {
     form.set("timezone", "America/Chicago");
     form.set("starts_local", "2026-06-02T18:00");
     form.set("duration_min", "60");
-    form.set("rule", "FREQ=DAILY;COUNT=1");
+    form.set("frequency", "once");
     form.set("max_seats", "10");
 
     const res = await call(

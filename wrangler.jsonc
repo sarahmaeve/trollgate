@@ -36,7 +36,12 @@
   ],
 
   "vars": {
-    "BASE_URL": "http://localhost:8787"
+    "BASE_URL": "http://localhost:8787",
+    // Fail-closed default: nobody is an organizer until set. Override per
+    // environment (.dev.vars locally; deployment vars in prod). Not secret.
+    "ADMIN_GITHUB_IDS": "",
+    // Display brand; override per deployment. Blank → "Trollgate".
+    "BRAND_NAME": ""
   },
 
   "triggers": {

@@ -7,7 +7,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "../env";
-import { layout, esc, formatInTz, errorCard } from "../view";
+import { chrome, esc, formatInTz, errorCard } from "../view";
 import {
   SIGNUP_STATUS,
   CANCELABLE_STATUSES,
@@ -52,7 +52,7 @@ function statusNotice(s: SignupView, started: boolean): string {
 
 reservation.get("/r/:token", async (c) => {
   const s = await load(c.env, c.req.param("token"));
-  if (!s) return c.html(errorCard("Reservation not found."), 404);
+  if (!s) return errorCard(c, "Reservation not found.", { status: 404 });
 
   const started = new Date(s.starts_at).getTime() <= Date.now();
   const cancelable = isActive(s.status) && !started;
@@ -63,7 +63,9 @@ reservation.get("/r/:token", async (c) => {
     : `<p class="muted">${statusNotice(s, started)}</p>`;
 
   return c.html(
-    layout(`
+    chrome(
+      c,
+      `
     <span class="sticker">${esc(s.status)}</span>
     <h1 class="display">${esc(s.event_title)}</h1>
     <div class="card">
@@ -82,12 +84,13 @@ reservation.get("/r/:token", async (c) => {
 reservation.post("/r/:token/cancel", async (c) => {
   const token = c.req.param("token");
   const s = await load(c.env, token);
-  if (!s) return c.html(errorCard("Reservation not found."), 404);
+  if (!s) return errorCard(c, "Reservation not found.", { status: 404 });
 
   if (new Date(s.starts_at).getTime() <= Date.now())
-    return c.html(
-      errorCard("This session has already started — cancellation is closed."),
-      409,
+    return errorCard(
+      c,
+      "This session has already started — cancellation is closed.",
+      { status: 409 },
     );
 
   // Guarded: only an active reservation transitions. A second click updates

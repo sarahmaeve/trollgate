@@ -10,6 +10,11 @@ export interface Env {
 
   // Vars
   BASE_URL: string;
+  // Comma-separated GitHub numeric ids allowed to create/manage events.
+  // Empty/unset → nobody (fail closed). Not secret; ids are public.
+  ADMIN_GITHUB_IDS?: string;
+  // Display brand (sidebar wordmark + <title>). Default "Trollgate".
+  BRAND_NAME?: string;
 
   // Secrets (wrangler secret put / .dev.vars). Present from the phase that
   // first needs them; typed here so usage sites are checked.

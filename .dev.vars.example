@@ -4,6 +4,13 @@
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 
+# GitHub numeric ids allowed to create/manage events (comma-separated).
+# Empty = nobody (fail closed). Find yours: https://api.github.com/users/<login>
+ADMIN_GITHUB_IDS=
+
+# Display brand (sidebar + page title). Blank → "Trollgate".
+BRAND_NAME=
+
 # Phase 5 (cancellation email)
 RESEND_API_KEY=
 

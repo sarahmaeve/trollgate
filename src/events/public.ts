@@ -4,7 +4,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "../env";
-import { layout, esc, formatInTz, errorCard } from "../view";
+import { chrome, esc, formatInTz, errorCard } from "../view";
 import {
   ACTIVE_SIGNUP_STATUSES_SQL,
   EVENT_STATUS,
@@ -50,7 +50,7 @@ pub.get("/", async (c) => {
     .join("");
 
   return c.html(
-    layout(`
+    chrome(c, `
     <span class="sticker">Trollgate</span>
     <h1 class="display">Sign up</h1>
     ${cards || '<div class="card"><p class="muted">No open events yet.</p></div>'}
@@ -76,7 +76,7 @@ pub.get("/e/:id", async (c) => {
       status: string;
     }>();
 
-  if (!ev) return c.html(errorCard("Event not found."), 404);
+  if (!ev) return errorCard(c, "Event not found.", { status: 404 });
 
   const { results: occ } = await c.env.DB.prepare(
     `SELECT o.id, o.starts_at,
@@ -104,7 +104,7 @@ pub.get("/e/:id", async (c) => {
     .join("");
 
   return c.html(
-    layout(`
+    chrome(c, `
     <span class="sticker">Event</span>
     <h1 class="display">${esc(ev.title)}</h1>
     <div class="card">

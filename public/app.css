@@ -41,6 +41,70 @@ body {
   );
   background-size: 22px 22px;
   min-height: 100vh;
+}
+
+/* App shell: fixed utility column (the DESIGN.md "narrower utility column")
+   + primary content. Collapses to a stacked top bar on small screens. */
+.shell {
+  display: flex;
+  align-items: stretch;
+  min-height: 100vh;
+}
+
+.sidebar {
+  flex-shrink: 0;
+  width: 15rem;
+  background-color: var(--color-surface);
+  border-right: var(--border-width-accent) solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.sidebar .brand {
+  font: var(--type-headline-md);
+  letter-spacing: var(--tracking-display);
+  text-transform: uppercase;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.sidebar ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sidebar a:not(.brand) {
+  display: block;
+  font: var(--type-label-md);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-text);
+  text-decoration: none;
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.sidebar a:not(.brand):hover {
+  background-color: var(--color-accent);
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+.sidebar .who {
+  margin-top: auto;
+  color: var(--color-muted);
+}
+
+.content {
+  flex: 1;
   padding: var(--space-2xl) var(--space-lg);
 }
 
@@ -51,6 +115,24 @@ body {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-xl);
+}
+
+@media (max-width: 800px) {
+  .shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: auto;
+    border-right: none;
+    border-bottom: var(--border-width-accent) solid var(--color-border);
+  }
+  .sidebar ul {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .sidebar .who {
+    margin-top: 0;
+  }
 }
 
 .display {

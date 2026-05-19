@@ -7,8 +7,8 @@
  */
 import { Hono, type Context } from "hono";
 import type { Env } from "../env";
-import { requireGitHub, type Vars } from "../auth/session";
-import { layout, esc, formatInTz, errorCard } from "../view";
+import { requireGitHub, requireOrganizer, type Vars } from "../auth/session";
+import { chrome, esc, formatInTz, errorCard } from "../view";
 import { eventCanceledNotificationStmts } from "../notify/outbox";
 import { csvField } from "./csv";
 import {
@@ -23,6 +23,7 @@ import {
 export const manage = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 manage.use("/manage/*", requireGitHub);
+manage.use("/manage/*", requireOrganizer);
 
 type Ctx = Context<{ Bindings: Env; Variables: Vars }>;
 
@@ -53,7 +54,7 @@ async function authorize(
 }
 
 const forbidden = (c: Ctx) =>
-  c.html(errorCard("Not authorized for this event."), 403);
+  errorCard(c, "Not authorized for this event.", { status: 403 });
 
 const canCancel = (ev: AuthorizedEvent) =>
   (ev.role === ROLE.owner || ev.role === ROLE.admin) &&
@@ -95,7 +96,9 @@ manage.get("/manage/:id", async (c) => {
     .join("");
 
   return c.html(
-    layout(`
+    chrome(
+      c,
+      `
     <span class="sticker">${esc(ev.status)} · ${esc(ev.role)}</span>
     <h1 class="display">${esc(ev.title)}</h1>
     <div class="card">
@@ -149,7 +152,9 @@ manage.get("/manage/:id/list", async (c) => {
     .join("");
 
   return c.html(
-    layout(`
+    chrome(
+      c,
+      `
     <span class="sticker">Attendees · ${rows.length}</span>
     <h1 class="display">${esc(ev.title)}</h1>
     <div class="card">
@@ -191,13 +196,11 @@ manage.post("/manage/:id/cancel", async (c) => {
   if (!ev) return forbidden(c);
 
   if (ev.role !== ROLE.owner && ev.role !== ROLE.admin)
-    return c.html(
-      errorCard(`Your role (${ev.role}) cannot cancel this event.`, {
-        href: `/manage/${ev.id}`,
-        label: "Back",
-      }),
-      403,
-    );
+    return errorCard(c, `Your role (${ev.role}) cannot cancel this event.`, {
+      href: `/manage/${ev.id}`,
+      label: "Back",
+      status: 403,
+    });
 
   if (ev.status !== EVENT_STATUS.open)
     return c.redirect(`/manage/${ev.id}`, 302);
@@ -235,13 +238,16 @@ manage.post("/manage/:id/cancel", async (c) => {
   await c.env.DB.batch(batch);
 
   return c.html(
-    layout(`
+    chrome(
+      c,
+      `
     <span class="sticker">Canceled</span>
     <h1 class="display">${esc(ev.title)}</h1>
     <div class="card">
       <p>Event canceled. ${affected.length} confirmed attendee(s) queued
       for a cancellation email.</p>
     </div>
-    <a class="btn" href="/manage/${esc(ev.id)}">Back</a>`),
+    <a class="btn" href="/manage/${esc(ev.id)}">Back</a>`,
+    ),
   );
 });

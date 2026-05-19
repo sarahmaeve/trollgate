@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   planOccurrences,
   validateRule,
+  buildRuleBody,
+  MAX_WEEKLY_COUNT,
   MAX_OCCURRENCES_PER_WINDOW,
 } from "../src/events/recurrence";
 
@@ -66,6 +68,44 @@ describe("planOccurrences", () => {
   it("rejects FREQ=MINUTELY over the window (too many sessions)", () => {
     const r = planOccurrences(ical("FREQ=MINUTELY"), 60, NOW);
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("buildRuleBody (friendly form → RRULE body)", () => {
+  it("single session → one-off rule", () => {
+    expect(buildRuleBody({ frequency: "once" })).toEqual({
+      ok: true,
+      rule: "FREQ=DAILY;COUNT=1",
+    });
+  });
+
+  it("weekly → FREQ=WEEKLY with the chosen count (weekday implied by DTSTART)", () => {
+    expect(buildRuleBody({ frequency: "weekly", count: 8 })).toEqual({
+      ok: true,
+      rule: "FREQ=WEEKLY;COUNT=8",
+    });
+    expect(buildRuleBody({ frequency: "weekly", count: 1 })).toEqual({
+      ok: true,
+      rule: "FREQ=WEEKLY;COUNT=1",
+    });
+  });
+
+  it("rejects a non-positive / non-integer / over-cap weekly count", () => {
+    for (const count of [0, -3, 2.5, Number.NaN, MAX_WEEKLY_COUNT + 1]) {
+      const r = buildRuleBody({ frequency: "weekly", count });
+      expect(r.ok).toBe(false);
+    }
+  });
+
+  it("accepts the boundary weekly count", () => {
+    expect(buildRuleBody({ frequency: "weekly", count: MAX_WEEKLY_COUNT })).toEqual(
+      { ok: true, rule: `FREQ=WEEKLY;COUNT=${MAX_WEEKLY_COUNT}` },
+    );
+  });
+
+  it("rejects an unknown frequency", () => {
+    // @ts-expect-error — exercising the runtime guard for bad form input
+    expect(buildRuleBody({ frequency: "yearly", count: 3 }).ok).toBe(false);
   });
 });
 

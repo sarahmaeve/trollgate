@@ -6,7 +6,7 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { requireGitHub, type Vars } from "../auth/session";
-import { layout, esc, formatInTz, errorCard } from "../view";
+import { chrome, esc, formatInTz, errorCard } from "../view";
 import {
   getOccurrenceContext,
   reserveConfirmedSeat,
@@ -41,11 +41,13 @@ async function gate(env: Env, occurrenceId: string): Promise<Gate> {
 signup.get("/o/:id/signup", async (c) => {
   const id = c.get("identity");
   const g = await gate(c.env, c.req.param("id"));
-  if (!g.ok) return c.html(errorCard(g.msg), g.code);
+  if (!g.ok) return errorCard(c, g.msg, { status: g.code });
 
   const { ctx } = g;
   return c.html(
-    layout(`
+    chrome(
+      c,
+      `
     <span class="sticker">Confirm signup</span>
     <h1 class="display">${esc(ctx.event_title)}</h1>
     <form class="card" method="post" action="/o/${esc(ctx.occurrence_id)}/signup">
@@ -62,14 +64,14 @@ signup.get("/o/:id/signup", async (c) => {
 signup.post("/o/:id/signup", async (c) => {
   const id = c.get("identity");
   const g = await gate(c.env, c.req.param("id"));
-  if (!g.ok) return c.html(errorCard(g.msg), g.code);
+  if (!g.ok) return errorCard(c, g.msg, { status: g.code });
 
   const { ctx } = g;
 
   // NoPayment: free events confirm directly. Phase 6 branches here on
   // payment.required(ctx) → Stripe Checkout → pending_payment.
   if (payment.required({ depositCents: ctx.deposit_cents }))
-    return c.html(errorCard("Paid events arrive in Phase 6."), 501);
+    return errorCard(c, "Paid events arrive in Phase 6.", { status: 501 });
 
   const r = await reserveConfirmedSeat(c.env, {
     occurrenceId: ctx.occurrence_id,
@@ -80,13 +82,11 @@ signup.post("/o/:id/signup", async (c) => {
   });
 
   if (r.kind === "full")
-    return c.html(
-      errorCard("Sorry — this session is full.", {
-        href: `/e/${ctx.event_id}`,
-        label: "Back",
-      }),
-      409,
-    );
+    return errorCard(c, "Sorry — this session is full.", {
+      href: `/e/${ctx.event_id}`,
+      label: "Back",
+      status: 409,
+    });
 
   // ok or duplicate → land on the persistent personal link.
   return c.redirect(`/r/${r.linkToken}`, 302);

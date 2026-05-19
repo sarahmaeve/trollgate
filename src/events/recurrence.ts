@@ -109,6 +109,52 @@ export function planOccurrences(
   return { ok: true, occurrences };
 }
 
+/** Upper bound on a weekly series length the friendly form will accept. */
+export const MAX_WEEKLY_COUNT = 52;
+
+export type RecurrenceInput =
+  | { frequency: "once" }
+  | { frequency: "weekly"; count: number };
+
+/**
+ * Friendly form selection → RRULE body. Weekly intentionally omits BYDAY:
+ * FREQ=WEEKLY repeats on the DTSTART weekday, so the cadence follows the
+ * organizer's chosen first session — no separate weekday picker, no
+ * date/weekday mismatch.
+ */
+export function buildRuleBody(
+  input: RecurrenceInput,
+): { ok: true; rule: string } | { ok: false; error: string } {
+  if (input.frequency === "once") return { ok: true, rule: "FREQ=DAILY;COUNT=1" };
+  if (input.frequency === "weekly") {
+    const n = input.count;
+    if (!Number.isInteger(n) || n < 1 || n > MAX_WEEKLY_COUNT)
+      return {
+        ok: false,
+        error: `number of weekly sessions must be a whole number between 1 and ${MAX_WEEKLY_COUNT}`,
+      };
+    return { ok: true, rule: `FREQ=WEEKLY;COUNT=${n}` };
+  }
+  return { ok: false, error: "unknown recurrence frequency" };
+}
+
+/** The series' very first occurrence (tz-correct via DTSTART;TZID), or null
+ *  if the iCal is unparseable / empty. Bounded: stops after the first. */
+export function firstOccurrence(ical: string): Date | null {
+  let rule: Recurrence;
+  try {
+    rule = rrulestr(ical, { forceset: true });
+  } catch {
+    return null;
+  }
+  const out: Date[] = [];
+  rule.all((d: Date) => {
+    out.push(d);
+    return false;
+  });
+  return out[0] ?? null;
+}
+
 export type RuleValidation = { ok: true } | { ok: false; error: string };
 
 /**

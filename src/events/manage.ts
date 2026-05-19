@@ -1,121 +1,150 @@
 /**
- * Create-event flow (Phase 2). Dashboard / cancel / list land in Phase 4.
- *
- * The owner hand-writes a recurrence body (IMPL.md defers a builder UI); we
- * assemble the iCal DTSTART;TZID + RRULE so materialization is timezone-correct
- * and deterministic. Deposit is forced to 0 for the MVP — paid events need the
- * Phase 6 StripePayment provider, so allowing >0 here would break the
- * NoPayment invariant.
+ * Create-event flow. Deposit is forced to 0 for the MVP — paid events need
+ * the Phase 6 StripePayment provider, so allowing >0 here would break the
+ * NoPayment invariant. Recurrence is a friendly form (one-off / weekly-by-N),
+ * not a raw RRULE; iCal assembly + validation live in event-form.ts.
  */
 import { Hono } from "hono";
 import type { Env } from "../env";
-import { requireGitHub, type Vars } from "../auth/session";
+import { requireGitHub, requireOrganizer, type Vars } from "../auth/session";
 import { materializeEvent } from "./materialize";
-import { validateRule } from "./recurrence";
+import {
+  parseCreateEventForm,
+  type RawEventForm,
+  type EventFormFields,
+} from "./event-form";
+import { timezoneOptions } from "./timezones";
 import { newId } from "../id";
-import { layout, esc } from "../view";
+import { chrome, esc, errorCard, formatInTz } from "../view";
 
 export const events = new Hono<{ Bindings: Env; Variables: Vars }>();
 
-const SINGLE_RULE = "FREQ=DAILY;COUNT=1"; // one-off when no recurrence given
+const DEFAULTS: EventFormFields = {
+  title: "",
+  description: "",
+  requirements: "",
+  timezone: "America/Los_Angeles",
+  starts_local: "",
+  duration_min: "60",
+  frequency: "once",
+  weekly_count: "8",
+  max_seats: "10",
+};
 
-function validTimezone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
+function renderEventForm(
+  c: Parameters<typeof chrome>[0],
+  raw: EventFormFields,
+  errors: string[],
+): string {
+  const v = (k: keyof EventFormFields) => esc(raw[k] !== "" ? raw[k] : DEFAULTS[k]);
+  const sel = (k: "timezone" | "frequency", opt: string) =>
+    (raw[k] || DEFAULTS[k]) === opt ? " selected" : "";
 
-/** "2026-06-01T18:00" → "20260601T180000" (iCal local basic format). */
-function toICalBasic(local: string): string | null {
-  const m = local.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  if (!m) return null;
-  const [, y, mo, d, h, mi] = m;
-  return `${y}${mo}${d}T${h}${mi}00`;
-}
+  const tzOptions = timezoneOptions()
+    .map((z) => `<option${sel("timezone", z)}>${esc(z)}</option>`)
+    .join("");
 
-function buildICal(tz: string, local: string, ruleBody: string): string {
-  return `DTSTART;TZID=${tz}:${toICalBasic(local)}\nRRULE:${ruleBody}`;
+  const errorBlock =
+    errors.length > 0
+      ? `<div class="card"><p class="bad">Please fix:</p><ul>${errors
+          .map((e) => `<li>${esc(e)}</li>`)
+          .join("")}</ul></div>`
+      : "";
+
+  return chrome(
+    c,
+    `
+    <span class="sticker">New event</span>
+    <h1 class="display">Create</h1>
+    ${errorBlock}
+    <form class="card" method="post" action="/events">
+      <p class="label">Title</p>
+      <input name="title" required maxlength="120" value="${v("title")}">
+      <p class="label">Description</p>
+      <textarea name="description" required rows="3">${v("description")}</textarea>
+      <p class="label">Requirements (optional)</p>
+      <input name="requirements" maxlength="240" value="${v("requirements")}">
+      <p class="label">Timezone</p>
+      <select name="timezone" required>${tzOptions}</select>
+      <p class="label">First session (local)</p>
+      <input name="starts_local" type="datetime-local" required value="${v(
+        "starts_local",
+      )}">
+      <p class="label">Duration (minutes)</p>
+      <input name="duration_min" type="number" min="1" value="${v(
+        "duration_min",
+      )}" required>
+      <p class="label">Repeats</p>
+      <select name="frequency" required>
+        <option value="once"${sel("frequency", "once")}>Single session</option>
+        <option value="weekly"${sel("frequency", "weekly")}>Weekly</option>
+      </select>
+      <p class="label">If weekly: number of sessions</p>
+      <input name="weekly_count" type="number" min="1" value="${v(
+        "weekly_count",
+      )}">
+      <p class="label">Max seats</p>
+      <input name="max_seats" type="number" min="1" value="${v(
+        "max_seats",
+      )}" required>
+      <button type="submit">Create event</button>
+    </form>
+    <p class="muted">Weekly repeats on the first session's weekday.
+    Paid deposits arrive in Phase&nbsp;6; MVP events are free.</p>`,
+  );
 }
 
 events.use("/events/*", requireGitHub);
+events.use("/events/*", requireOrganizer);
 
-events.get("/events/new", (c) =>
-  c.html(
-    layout(`
-    <span class="sticker">New event</span>
-    <h1 class="display">Create</h1>
-    <form class="card" method="post" action="/events">
-      <p class="label">Title</p>
-      <input name="title" required maxlength="120">
-      <p class="label">Description</p>
-      <textarea name="description" required rows="3"></textarea>
-      <p class="label">Requirements (optional)</p>
-      <input name="requirements" maxlength="240">
-      <p class="label">Timezone (IANA)</p>
-      <input name="timezone" required placeholder="America/Chicago" value="America/Chicago">
-      <p class="label">First session (local)</p>
-      <input name="starts_local" type="datetime-local" required>
-      <p class="label">Duration (minutes)</p>
-      <input name="duration_min" type="number" min="1" value="60" required>
-      <p class="label">Recurrence (RRULE body — blank = one-off)</p>
-      <input name="rule" placeholder="FREQ=WEEKLY;BYDAY=TU;COUNT=8">
-      <p class="label">Max seats</p>
-      <input name="max_seats" type="number" min="1" value="10" required>
-      <button type="submit">Create event</button>
-    </form>
-    <p class="muted">Paid deposits arrive in Phase&nbsp;6; MVP events are free.</p>`),
-  ),
-);
+events.get("/events", async (c) => {
+  const id = c.get("identity");
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, title, status FROM events
+      WHERE org_id = ?1 ORDER BY created_at DESC`,
+  )
+    .bind(id.orgId)
+    .all<{ id: string; title: string; status: string }>();
+
+  const rows = results
+    .map(
+      (e) =>
+        `<li class="card"><a href="/manage/${esc(e.id)}">${esc(
+          e.title,
+        )}</a> <span class="label">${esc(e.status)}</span></li>`,
+    )
+    .join("");
+
+  return c.html(
+    chrome(
+      c,
+      `
+    <span class="sticker">My events</span>
+    <h1 class="display">Events</h1>
+    <ul class="stack" style="padding:0;list-style:none">${
+      rows || '<li class="muted">No events yet.</li>'
+    }</ul>
+    <a class="btn" href="/events/new">Create event</a>`,
+    ),
+  );
+});
+
+events.get("/events/new", (c) => c.html(renderEventForm(c, DEFAULTS, [])));
 
 events.post("/events", async (c) => {
   const id = c.get("identity");
   const f = await c.req.formData();
-  const get = (k: string) => String(f.get(k) ?? "").trim();
+  const raw: RawEventForm = {};
+  for (const k of Object.keys(DEFAULTS) as (keyof EventFormFields)[])
+    raw[k] = String(f.get(k) ?? "");
 
-  const title = get("title");
-  const description = get("description");
-  const requirements = get("requirements") || null;
-  const timezone = get("timezone");
-  const startsLocal = get("starts_local");
-  const durationMin = parseInt(get("duration_min"), 10);
-  const ruleBody = get("rule") || SINGLE_RULE;
-  const maxSeats = parseInt(get("max_seats"), 10);
+  const parsed = parseCreateEventForm(raw);
+  if (!parsed.ok)
+    // Sticky: re-render the same form with the submitted values + errors,
+    // not a dead-end error page that loses the user's input.
+    return c.html(renderEventForm(c, parsed.raw, parsed.errors), 400);
 
-  const errs: string[] = [];
-  if (!title) errs.push("title required");
-  if (!description) errs.push("description required");
-  if (!validTimezone(timezone)) errs.push("invalid IANA timezone");
-  if (!toICalBasic(startsLocal)) errs.push("invalid first-session datetime");
-  if (!Number.isInteger(durationMin) || durationMin < 1)
-    errs.push("duration must be a positive integer");
-  if (!Number.isInteger(maxSeats) || maxSeats < 1)
-    errs.push("max seats must be a positive integer");
-
-  let ical = "";
-  if (errs.length === 0) {
-    ical = buildICal(timezone, startsLocal, ruleBody);
-    // Bounded validation (Finding 1): rejects an unparseable, empty, OR
-    // pathologically frequent rule before the event row is ever stored, so
-    // an abusive series can't be persisted and poison the Cron. Far-future
-    // series are still accepted (validated against their first occurrence).
-    const v = validateRule(ical, durationMin);
-    if (!v.ok) errs.push(v.error);
-  }
-
-  if (errs.length > 0) {
-    return c.html(
-      layout(
-        `<div class="card"><p class="bad">Could not create event</p>
-        <ul>${errs.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>
-        <a class="btn" href="/events/new">Back</a></div>`,
-      ),
-      400,
-    );
-  }
-
+  const { values } = parsed;
   const eventId = newId("evt");
   await c.env.DB.prepare(
     `INSERT INTO events
@@ -126,20 +155,20 @@ events.post("/events", async (c) => {
     .bind(
       eventId,
       id.orgId,
-      title,
-      description,
-      requirements,
-      ical,
-      timezone,
-      durationMin,
-      maxSeats,
+      values.title,
+      values.description,
+      values.requirements,
+      values.ical,
+      values.timezone,
+      values.durationMin,
+      values.maxSeats,
     )
     .run();
 
   await materializeEvent(c.env, {
     id: eventId,
-    rrule: ical,
-    duration_min: durationMin,
+    rrule: values.ical,
+    duration_min: values.durationMin,
   });
 
   return c.redirect(`/events/${eventId}`, 302);
@@ -163,12 +192,7 @@ events.get("/events/:id", async (c) => {
       status: string;
     }>();
 
-  if (!ev) {
-    return c.html(
-      layout(`<div class="card"><p class="bad">Event not found.</p></div>`),
-      404,
-    );
-  }
+  if (!ev) return errorCard(c, "Event not found.", { status: 404 });
 
   const { results: occ } = await c.env.DB.prepare(
     `SELECT starts_at, ends_at, status FROM event_occurrences
@@ -180,14 +204,16 @@ events.get("/events/:id", async (c) => {
   const rows = occ
     .map(
       (o) =>
-        `<li>${esc(o.starts_at)} → ${esc(o.ends_at)} <span class="label">${esc(
+        `<li>${esc(formatInTz(o.starts_at, ev.timezone))} <span class="label">${esc(
           o.status,
         )}</span></li>`,
     )
     .join("");
 
   return c.html(
-    layout(`
+    chrome(
+      c,
+      `
     <span class="sticker">${esc(ev.status)}</span>
     <h1 class="display">${esc(ev.title)}</h1>
     <div class="card">
@@ -197,6 +223,7 @@ events.get("/events/:id", async (c) => {
       <p class="label">Occurrences (${occ.length})</p>
       <ul>${rows || "<li>(none materialized yet)</li>"}</ul>
     </div>
-    <a class="btn" href="/events/new">Create another</a>`),
+    <a class="btn" href="/manage/${esc(ev.id)}">Manage</a>`,
+    ),
   );
 });

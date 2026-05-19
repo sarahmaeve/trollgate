@@ -455,11 +455,18 @@ row, so there is no separate "non-repeating" code path to throw away later.
 Email in v0: **cancellation notices are in scope** (Resend + outbox, above).
 Stripe sends payment receipts itself.
 
+Recurrence is a **friendly form** (single session, or weekly × N — weekday
+implied by the first session; `event-form.ts`/`recurrence.ts`), not a raw
+RRULE. Timezone is a dropdown from the runtime IANA list; brand is
+`BRAND_NAME`-configurable; the create form is sticky on validation error
+(submitted values + inline errors, no dead-end page).
+
 Deferred past MVP: standalone email-verification path (GitHub's verified email
 covers identity for v0), series-subscription signup (per-occurrence only for
-v0), owner-facing `rrule` builder UI (hand-write the RRULE string for now),
-discount codes, welcome/logistics emails (other `notifications.kind`s reuse
-the same outbox later), account-age anti-abuse filter (keep lenient).
+v0), richer recurrence (daily/monthly, intervals, end-by-date — only
+once/weekly-by-count for v0), discount codes, welcome/logistics emails (other
+`notifications.kind`s reuse the same outbox later), account-age anti-abuse
+filter (keep lenient).
 
 ---
 
